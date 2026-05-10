@@ -5,23 +5,23 @@ description: >
 
 inputs:
   vllm-url:
-    description: 'Base URL of the vLLM server (e.g. http://<your-host>:30000/v1). Pass via ${{ vars.VLLM_BASE_URL }}.'
+    description: "Base URL of the vLLM server (e.g. http://<your-host>:30000/v1)"
     required: true
   github-token:
-    description: 'GitHub token for fetching PR diff and posting the review comment'
+    description: "GitHub token for fetching PR diff and posting the review comment"
     required: true
   vllm-model:
-    description: 'Override model ID. Auto-detected from /v1/models if empty.'
+    description: "Override model ID. Auto-detected from /v1/models if empty."
     required: false
-    default: ''
+    default: ""
   vllm-timeout:
-    description: 'Total request timeout in seconds'
+    description: "Total request timeout in seconds"
     required: false
-    default: '120'
+    default: "120"
   vllm-retries:
-    description: 'Number of retries on LLM request failure'
+    description: "Number of retries on LLM request failure"
     required: false
-    default: '2'
+    default: "2"
 
 runs:
   using: composite
