@@ -1,5 +1,8 @@
 {
   "name": "ai-devops-toolkit",
+  "bin": {
+    "docgen": "./bin/docgen"
+  },
   "scripts": {
     "docgen": "./bin/docgen",
     "postinstall": "node scripts/npm-postinstall.js"
