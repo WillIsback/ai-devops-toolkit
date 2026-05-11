@@ -8,7 +8,6 @@ import ast
 import asyncio
 import os
 import re
-import sys
 from pathlib import Path
 from typing import Optional, TypedDict
 
@@ -98,7 +97,8 @@ def ts_has_missing_docstrings(source: str, force: bool = False) -> bool:
     lines = source.splitlines()
     declaration_re = re.compile(
         r'^(?:export\s+)?(?:async\s+)?(?:function\s+\w+|class\s+\w+)'
-        r'|^(?:(?:public|private|protected|static|async|override)\s+)*\w+\s*\('
+        r'|^(?:(?:public|private|protected|static|async|override)\s+)*'
+        r'(?!if|for|while|switch|catch|return|throw|new|typeof|await|delete)\w+\s*\('
     )
     for i, line in enumerate(lines):
         stripped = line.strip()

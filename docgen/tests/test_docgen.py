@@ -50,7 +50,7 @@ class TestCheckDirtyTree:
         mock_diff = MagicMock()
         mock_diff.a_path = "src/foo.py"
         mock_repo = MagicMock()
-        mock_repo.index.diff.return_value = [mock_diff]
+        mock_repo.index.diff.side_effect = lambda arg: [mock_diff] if arg is None else []
         mock_repo.untracked_files = ["src/bar.py"]
         with patch("docgen.docgen.git.Repo", return_value=mock_repo):
             import docgen.docgen as m
@@ -232,6 +232,11 @@ class TestTsHasMissingDocstrings:
         source = "/**\n * MyService.\n */\nclass MyService {\n  run(): void {}\n}\n"
         import docgen.docgen as m
         assert m.ts_has_missing_docstrings(source) is True
+
+    def test_control_flow_keywords_not_matched(self):
+        source = "/**\n * A function.\n */\nfunction process(): void {\n  if (x > 0) {\n    for (let i = 0; i < 10; i++) {\n    }\n  }\n}\n"
+        import docgen.docgen as m
+        assert m.ts_has_missing_docstrings(source) is False
 
 
 class TestNeedsDocstrings:
