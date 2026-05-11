@@ -2,6 +2,8 @@
 
 GitHub Composite Action that reviews a Pull Request diff using a self-hosted [vLLM](https://github.com/vllm-project/vllm) instance and posts a structured Markdown comment on the PR.
 
+The action downloads a pre-compiled **Rust binary** from GitHub Releases and executes it directly — no `setup-python`, no `pip install`, startup time is ~1 second plus inference.
+
 ---
 
 ## Usage
@@ -33,34 +35,35 @@ GitHub Composite Action that reviews a Pull Request diff using a self-hosted [vL
 
 - A self-hosted GitHub Actions runner with network access to your vLLM instance
 - A repository or organisation secret `VLLM_URL` set to your vLLM endpoint
+- Runner architecture must be `x86_64` or `aarch64` (Linux)
 
 ## How it works
 
-1. Fetches the PR diff via the GitHub API
-2. Splits large diffs into chunks that fit the model's context window
-3. Queries `/v1/models` to auto-detect the loaded model (unless `vllm-model` is set)
-4. Sends each chunk to the vLLM chat completions endpoint
-5. Posts the aggregated review as a Markdown comment on the PR
+1. **Download binary** — the action fetches `code-review-cli-linux-amd64` (or `arm64`) from GitHub Releases and makes it executable
+2. **Fetch PR diff** — fetches all changed files via the GitHub REST API, with automatic pagination (up to 50 pages of 100 files each)
+3. **Model detection** — uses `VLLM_MODEL` input if set; otherwise queries `GET /v1/models` to auto-detect the loaded model
+4. **Chunked review** — splits large diffs into ~2000-word chunks and sends each to the vLLM chat completions endpoint
+5. **Post comment** — aggregates chunk reviews into a single Markdown comment and posts it on the PR (truncated safely at 60 000 characters)
 
-## Qwen / reasoning models
+## Supported architectures
 
-For Qwen reasoning models, the action disables thinking mode per request so the final answer is returned directly in `message.content`:
+| Runner arch | Asset downloaded |
+|---|---|
+| `x86_64` | `code-review-cli-linux-amd64` |
+| `aarch64` | `code-review-cli-linux-arm64` |
 
-```python
-extra_body={
-    "reasoning_effort": "none",
-    "chat_template_kwargs": {"enable_thinking": False},
-}
-```
-
-This prevents responses that contain only reasoning traces without the review content.
-
-## Files
+## Project structure
 
 ```
 code-review/
-├── action.yml     # GitHub Composite Action definition
-├── reviewer.py    # Python script — fetches diff, calls vLLM, posts comment
-└── tests/
-    └── test_reviewer.py
+└── action.yml                    # Composite Action definition
+
+crates/
+├── toolkit-core/                 # Shared: vLLM client, config, errors
+└── code-review-cli/              # code-review-cli binary
+    ├── src/
+    │   ├── main.rs               # Orchestration
+    │   ├── github.rs             # PR diff fetch via octocrab
+    │   └── review.rs             # Chunking, vLLM calls, PR comment posting
+    └── Cargo.toml
 ```

@@ -2,7 +2,7 @@
 
 CLI tool that generates and inserts docstrings into Python and TypeScript source files using a locally-hosted [vLLM](https://github.com/vllm-project/vllm) instance. Designed for use during development or at build time via `uv run` or `pnpm run`.
 
-All file edits are isolated in a short-lived `docgen/<timestamp>` git branch that is merged back into the current branch and deleted — keeping your working branch clean.
+The engine is written in **Rust**: source files are parsed with [tree-sitter](https://tree-sitter.github.io/) AST queries (no regex), LLM calls run in parallel with a tokio semaphore, and all file edits are isolated in a short-lived `docgen/<timestamp>` git branch that is merged back and deleted — keeping your working branch clean.
 
 ---
 
@@ -10,7 +10,7 @@ All file edits are isolated in a short-lived `docgen/<timestamp>` git branch tha
 
 ### Global install (use from anywhere)
 
-Install `docgen` as a global tool with `uv`. It becomes available system-wide as a standalone command, without needing to be inside a specific project.
+Install `docgen` as a global tool with `uv`. Maturin builds the Rust binary and installs it into the tool environment:
 
 ```bash
 uv tool install git+https://github.com/WillIsback/ai-devops-toolkit.git
@@ -25,7 +25,6 @@ docgen src/ --recursive
 To update later:
 
 ```bash
-# The package name is ai-devops-toolkit, not docgen
 uv tool upgrade ai-devops-toolkit
 
 # Or force a reinstall to pick up the latest commit:
@@ -36,50 +35,28 @@ uv tool install --reinstall git+https://github.com/WillIsback/ai-devops-toolkit.
 
 ### Local install — Python project
 
-Add `docgen` as a development dependency of your Python project using `uv`:
-
 ```bash
 uv add --dev git+https://github.com/WillIsback/ai-devops-toolkit.git
-```
-
-Then invoke it through `uv run` without installing it globally:
-
-```bash
 uv run docgen src/
-```
-
-Or register it as a script in your own `pyproject.toml`:
-
-```toml
-[tool.uv.scripts]
-docgen = "docgen.docgen:app"
 ```
 
 ---
 
 ### Local install — TypeScript / Node project
 
-Add the wrapper to your `package.json` scripts (requires `uv` to be available in the environment):
+On `npm install` / `pnpm install` a postinstall script downloads the pre-compiled binary from GitHub Releases automatically.
 
 ```bash
-npm pkg set scripts.docgen="uv run --with git+https://github.com/WillIsback/ai-devops-toolkit.git docgen"
-```
-
-Or add it manually to `package.json`:
-
-```json
-{
-  "scripts": {
-    "docgen": "uv run --with git+https://github.com/WillIsback/ai-devops-toolkit.git docgen"
-  }
-}
+npm install WillIsback/ai-devops-toolkit
+# or
+pnpm install WillIsback/ai-devops-toolkit
 ```
 
 Then run:
 
 ```bash
-npm run docgen -- src/
 pnpm run docgen -- src/
+npm run docgen -- src/
 ```
 
 ---
@@ -89,7 +66,6 @@ pnpm run docgen -- src/
 Clone or add the toolkit as a submodule, then wire both entry points:
 
 ```bash
-# Clone alongside your project (or use as a git submodule)
 git clone https://github.com/WillIsback/ai-devops-toolkit.git tools/ai-devops-toolkit
 cd tools/ai-devops-toolkit && uv sync
 ```
@@ -104,20 +80,13 @@ In your root `package.json`:
 }
 ```
 
-In your root `pyproject.toml` (if using uv workspaces):
-
-```toml
-[tool.uv.workspace]
-members = ["tools/ai-devops-toolkit"]
-```
-
 ---
 
 ## Configuration
 
-`docgen` loads configuration in two layers (project overrides global):
+`docgen` loads `.env` files in two layers (project overrides global):
 
-### Global config (recommended for the global install)
+### Global config
 
 Create `~/.config/docgen/.env` once — applies to every project on the machine:
 
@@ -131,14 +100,22 @@ EOF
 
 ### Project-level config
 
-Create a `.env` at the root of any project to override the global values for that project:
+Create a `.env` at the root of any project to override global values:
 
 ```
 VLLM_BASE_URL=http://<your-host>:30000/v1
 BATCH_SIZE=4
 ```
 
-`docgen` loads the global config first, then the project `.env` on top. Both files are optional — whichever is found wins; if neither is found, `VLLM_BASE_URL` defaults to `http://localhost:30000/v1`.
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `VLLM_BASE_URL` | `http://localhost:30000/v1` | vLLM server base URL |
+| `BATCH_SIZE` | `4` | Max concurrent LLM requests |
+| `VLLM_MODEL` | _(auto)_ | Override model ID; auto-detected from `/v1/models` if unset |
+
+---
 
 ## Usage
 
@@ -181,11 +158,11 @@ pnpm run docgen -- src/
 ## How it works
 
 1. **Pre-flight checks** — aborts if the working tree has uncommitted changes, or if vLLM is unreachable
-2. **Model detection** — queries `GET /v1/models` to auto-detect the loaded model
+2. **Model detection** — uses `VLLM_MODEL` env var if set; otherwise queries `GET /v1/models`
 3. **File resolution** — collects `.py` / `.ts` / `.tsx` files under the target (flat or recursive)
-4. **Parsing** — Python files are parsed with the `ast` module; TypeScript files use regex. Files already fully documented are skipped (unless `--force`)
-5. **Batch LLM calls** — files are sent to vLLM in parallel, up to `BATCH_SIZE` concurrent calls
-6. **Git workflow** — creates a `docgen/<timestamp>` branch, writes patched files, commits, merges back, deletes the branch. On failure the branch is left intact for manual inspection
+4. **AST parsing** — Python files are parsed with `tree-sitter-python`; TypeScript with `tree-sitter-typescript`. Files with all functions/classes documented are skipped (unless `--force`). Parsing runs in parallel via `rayon`.
+5. **Batch LLM calls** — files are sent to vLLM concurrently, up to `BATCH_SIZE` in-flight requests via a `tokio` semaphore
+6. **Git workflow** — creates a `docgen/<timestamp>` branch, writes patched files, commits, merges back into the original branch, deletes the feature branch. On failure the branch is left intact for manual inspection.
 
 ## Exit codes
 
@@ -195,14 +172,22 @@ pnpm run docgen -- src/
 | `1` | Pre-flight failure (dirty tree, vLLM unreachable) or git error |
 | `2` | Nothing to do (no files found or all already documented) |
 
-## Files
+## Project structure
 
 ```
-docgen/
-├── docgen.py          # CLI, parsing, LLM calls, git workflow
-└── tests/
-    └── test_docgen.py # 53 unit tests
-pyproject.toml         # uv entry point: docgen = "docgen.docgen:app"
-package.json           # pnpm scripts wrapper
-.env.example           # VLLM_BASE_URL, BATCH_SIZE
+Cargo.toml                        # Workspace root
+crates/
+├── toolkit-core/                 # Shared: vLLM client, config, git, errors
+└── docgen-cli/                   # docgen binary
+    ├── src/
+    │   ├── main.rs               # Orchestration
+    │   ├── cli.rs                # Clap argument definitions
+    │   ├── resolver.rs           # File discovery
+    │   ├── detect.rs             # tree-sitter AST detection
+    │   ├── process.rs            # Parallel LLM calls
+    │   └── apply.rs              # Git branch/merge workflow
+    └── Cargo.toml
+pyproject.toml                    # maturin build — uv run docgen → Rust binary
+package.json                      # pnpm scripts + npm postinstall binary download
+.env.example                      # VLLM_BASE_URL, BATCH_SIZE
 ```
