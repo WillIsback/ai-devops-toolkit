@@ -75,6 +75,25 @@ def resolve_files(target: Path, recursive: bool = False) -> list[Path]:
     return sorted(f for f in target.glob(pattern) if f.is_file() and f.suffix in extensions)
 
 
+def python_has_missing_docstrings(source: str, force: bool = False) -> bool:
+    """Return True if source contains functions/classes that need docstrings."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            has_doc = (
+                node.body
+                and isinstance(node.body[0], ast.Expr)
+                and isinstance(node.body[0].value, ast.Constant)
+                and isinstance(node.body[0].value.value, str)
+            )
+            if not has_doc or force:
+                return True
+    return False
+
+
 def detect_model(base_url: str) -> Optional[str]:
     """Query /v1/models and return the first available model ID."""
     try:

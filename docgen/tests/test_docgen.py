@@ -150,3 +150,40 @@ class TestResolveFiles:
             f.write_text("")
             import docgen.docgen as m
             assert m.resolve_files(f) == [f]
+
+
+class TestPythonHasMissingDocstrings:
+    def test_function_without_docstring_returns_true(self):
+        source = "def foo():\n    return 1\n"
+        import docgen.docgen as m
+        assert m.python_has_missing_docstrings(source) is True
+
+    def test_function_with_docstring_returns_false(self):
+        source = 'def foo():\n    """Does foo."""\n    return 1\n'
+        import docgen.docgen as m
+        assert m.python_has_missing_docstrings(source) is False
+
+    def test_class_without_docstring_returns_true(self):
+        source = "class Bar:\n    pass\n"
+        import docgen.docgen as m
+        assert m.python_has_missing_docstrings(source) is True
+
+    def test_class_with_docstring_returns_false(self):
+        source = 'class Bar:\n    """Bar class."""\n    pass\n'
+        import docgen.docgen as m
+        assert m.python_has_missing_docstrings(source) is False
+
+    def test_force_true_returns_true_even_when_documented(self):
+        source = 'def foo():\n    """Has docstring."""\n    return 1\n'
+        import docgen.docgen as m
+        assert m.python_has_missing_docstrings(source, force=True) is True
+
+    def test_invalid_syntax_returns_false(self):
+        source = "def foo(:\n    pass\n"
+        import docgen.docgen as m
+        assert m.python_has_missing_docstrings(source) is False
+
+    def test_no_functions_or_classes_returns_false(self):
+        source = "x = 1\ny = 2\n"
+        import docgen.docgen as m
+        assert m.python_has_missing_docstrings(source) is False
