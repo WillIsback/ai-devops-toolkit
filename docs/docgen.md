@@ -6,20 +6,119 @@ All file edits are isolated in a short-lived `docgen/<timestamp>` git branch tha
 
 ---
 
-## Setup
+## Installation
 
-Copy `.env.example` to `.env` and set your vLLM endpoint:
+### Global install (use from anywhere)
+
+Install `docgen` as a global tool with `uv`. It becomes available system-wide as a standalone command, without needing to be inside a specific project.
+
+```bash
+uv tool install git+https://github.com/WillIsback/ai-devops-toolkit.git
+```
+
+Then run from any directory:
+
+```bash
+docgen src/ --recursive
+```
+
+To update later:
+
+```bash
+uv tool upgrade docgen
+```
+
+---
+
+### Local install — Python project
+
+Add `docgen` as a development dependency of your Python project using `uv`:
+
+```bash
+uv add --dev git+https://github.com/WillIsback/ai-devops-toolkit.git
+```
+
+Then invoke it through `uv run` without installing it globally:
+
+```bash
+uv run docgen src/
+```
+
+Or register it as a script in your own `pyproject.toml`:
+
+```toml
+[tool.uv.scripts]
+docgen = "docgen.docgen:app"
+```
+
+---
+
+### Local install — TypeScript / Node project
+
+Add the wrapper to your `package.json` scripts (requires `uv` to be available in the environment):
+
+```bash
+npm pkg set scripts.docgen="uv run --with git+https://github.com/WillIsback/ai-devops-toolkit.git docgen"
+```
+
+Or add it manually to `package.json`:
+
+```json
+{
+  "scripts": {
+    "docgen": "uv run --with git+https://github.com/WillIsback/ai-devops-toolkit.git docgen"
+  }
+}
+```
+
+Then run:
+
+```bash
+npm run docgen -- src/
+pnpm run docgen -- src/
+```
+
+---
+
+### Local install — Python + TypeScript monorepo
+
+Clone or add the toolkit as a submodule, then wire both entry points:
+
+```bash
+# Clone alongside your project (or use as a git submodule)
+git clone https://github.com/WillIsback/ai-devops-toolkit.git tools/ai-devops-toolkit
+cd tools/ai-devops-toolkit && uv sync
+```
+
+In your root `package.json`:
+
+```json
+{
+  "scripts": {
+    "docgen": "uv run --project tools/ai-devops-toolkit docgen"
+  }
+}
+```
+
+In your root `pyproject.toml` (if using uv workspaces):
+
+```toml
+[tool.uv.workspace]
+members = ["tools/ai-devops-toolkit"]
+```
+
+---
+
+## Configuration
+
+Copy `.env.example` to `.env` at the root of the repository (or your project root) and set your vLLM endpoint:
 
 ```
 VLLM_BASE_URL=http://<your-host>:30000/v1
 BATCH_SIZE=4
 ```
 
-Then install dependencies:
-
-```bash
-uv sync
-```
+`docgen` loads `.env` automatically from the current working directory at startup.
 
 ## Usage
 
