@@ -24,33 +24,29 @@ inputs:
     default: "2"
 
 runs:
-  using: composite
+  using: "composite"
   steps:
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-
-    - name: Install Python dependencies
-      shell: bash
-      run: pip install openai httpx requests --quiet
-
-    - name: Validate required inputs
+    - name: Download code-review-cli binary
       shell: bash
       run: |
-        if [ -z "${{ inputs.vllm-url }}" ]; then
-          echo "::error::Input 'vllm-url' is required but was not provided."
-          exit 1
-        fi
+        ARCH=$(uname -m)
+        case "$ARCH" in
+          x86_64)  ASSET="code-review-cli-linux-amd64" ;;
+          aarch64) ASSET="code-review-cli-linux-arm64" ;;
+          *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+        curl -fsSL -o "${{ github.action_path }}/code-review-cli" \
+          "https://github.com/WillIsback/ai-devops-toolkit/releases/latest/download/${ASSET}"
+        chmod +x "${{ github.action_path }}/code-review-cli"
 
     - name: Run AI Code Review
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-        VLLM_BASE_URL: ${{ inputs.vllm-url }}
-        VLLM_MODEL: ${{ inputs.vllm-model }}
-        VLLM_TIMEOUT: ${{ inputs.vllm-timeout }}
-        VLLM_RETRIES: ${{ inputs.vllm-retries }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_TOKEN:        ${{ inputs.github-token }}
+        VLLM_BASE_URL:       ${{ inputs.vllm-url }}
+        VLLM_MODEL:          ${{ inputs.vllm-model }}
+        VLLM_TIMEOUT:        ${{ inputs.vllm-timeout }}
+        VLLM_RETRIES:        ${{ inputs.vllm-retries }}
+        GITHUB_REPOSITORY:   ${{ github.repository }}
         PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-      run: python3 ${{ github.action_path }}/reviewer.py
+      run: ${{ github.action_path }}/code-review-cli

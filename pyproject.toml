@@ -1,26 +1,24 @@
 [project]
-name = "ai-devops-toolkit"
-version = "0.1.0"
-description = "AI DevOps Toolkit"
+name            = "ai-devops-toolkit"
+version         = "0.1.0"
+description     = "AI DevOps Toolkit"
 requires-python = ">=3.11"
-dependencies = [
-    "typer>=0.12",
-    "openai>=1.0",
-    "httpx>=0.27",
-    "python-dotenv>=1.0",
-    "gitpython>=3.1",
+dependencies    = [
     "pytest>=8.0",
 ]
 
-[project.scripts]
-docgen = "docgen.docgen:app"
-
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires      = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
 
-[tool.hatch.build.targets.wheel]
-packages = ["docgen"]
+[tool.maturin]
+bindings      = "bin"
+manifest-path = "crates/docgen-cli/Cargo.toml"
 
 [tool.pytest.ini_options]
-testpaths = ["docgen/tests", "code-review/tests"]
+testpaths = ["code-review/tests"]
+
+[tool.uv]
+dev-dependencies = [
+    "maturin>=1.5,<2.0",
+]
