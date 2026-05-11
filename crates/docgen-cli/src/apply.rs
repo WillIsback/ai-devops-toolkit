@@ -94,3 +94,77 @@ pub fn apply_with_git(patches: Vec<PatchResult>, repo_path: &Path) -> Result<(),
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::process::PatchResult;
+    use std::path::PathBuf;
+
+    fn init_git_repo_with_file(dir: &std::path::Path, filename: &str, content: &str) {
+        // Configure git
+        std::process::Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(dir)
+            .output()
+            .expect("git init failed");
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir)
+            .output()
+            .expect("git config email failed");
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir)
+            .output()
+            .expect("git config name failed");
+
+        // Write initial file and commit
+        std::fs::write(dir.join(filename), content).expect("write failed");
+        std::process::Command::new("git")
+            .args(["add", filename])
+            .current_dir(dir)
+            .output()
+            .expect("git add failed");
+        std::process::Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(dir)
+            .output()
+            .expect("git commit failed");
+    }
+
+    #[test]
+    fn test_apply_with_git_patches_file_and_creates_merge_commit() {
+        let tmp = tempfile::tempdir().expect("tempdir failed");
+        let dir = tmp.path();
+
+        let filename = "index.ts";
+        let original = "export function add(a: number, b: number): number { return a + b; }\n";
+        let patched = "/** Adds two numbers. */\nexport function add(a: number, b: number): number { return a + b; }\n";
+
+        init_git_repo_with_file(dir, filename, original);
+
+        let patch = PatchResult {
+            path: PathBuf::from(dir.join(filename)),
+            content: patched.to_string(),
+        };
+
+        apply_with_git(vec![patch], dir).expect("apply_with_git failed");
+
+        // Assert working tree file matches patched content
+        let on_disk = std::fs::read_to_string(dir.join(filename)).expect("read failed");
+        assert_eq!(on_disk, patched, "working tree file should contain patched content");
+
+        // Assert a merge commit exists (merge commits have 2 parents)
+        let output = std::process::Command::new("git")
+            .args(["log", "--oneline", "--all"])
+            .current_dir(dir)
+            .output()
+            .expect("git log failed");
+        let log = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            log.contains("merge"),
+            "git log should contain a merge commit, got:\n{log}"
+        );
+    }
+}
