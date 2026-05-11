@@ -314,6 +314,29 @@ class TestGenerateDocstrings:
         assert result_path == f
         assert result_content is None
 
+    def test_force_true_uses_replace_action_in_prompt(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "foo.py"
+            f.write_text('def bar():\n    """Already documented."""\n    return 1\n')
+
+            captured_prompt = {}
+
+            async def fake_create(**kwargs):
+                captured_prompt["content"] = kwargs["messages"][0]["content"]
+                return MagicMock(
+                    choices=[MagicMock(message=MagicMock(content="patched"))]
+                )
+
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = fake_create
+
+            import docgen.docgen as m
+            sem = asyncio.Semaphore(4)
+            asyncio.run(
+                m.generate_docstrings_async(mock_client, sem, f, "mkdocs", True, "test-model")
+            )
+        assert "Replace all existing docstrings" in captured_prompt["content"]
+
 
 class TestProcessFilesAsync:
     def test_returns_dict_of_patched_files(self):
