@@ -206,7 +206,7 @@ class TestTsHasMissingDocstrings:
         assert m.ts_has_missing_docstrings(source) is True
 
     def test_class_with_jsdoc_returns_false(self):
-        source = "/**\n * MyService class.\n */\nclass MyService {\n  run() {}\n}\n"
+        source = "/**\n * MyService class.\n */\nclass MyService {\n  /** Run it. */\n  run() {}\n}\n"
         import docgen.docgen as m
         assert m.ts_has_missing_docstrings(source) is False
 
@@ -224,6 +224,11 @@ class TestTsHasMissingDocstrings:
         source = "const x = 1;\nconst y = 2;\n"
         import docgen.docgen as m
         assert m.ts_has_missing_docstrings(source) is False
+
+    def test_class_method_without_jsdoc_returns_true(self):
+        source = "/**\n * MyService.\n */\nclass MyService {\n  run(): void {}\n}\n"
+        import docgen.docgen as m
+        assert m.ts_has_missing_docstrings(source) is True
 
 
 class TestNeedsDocstrings:

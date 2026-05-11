@@ -95,13 +95,17 @@ def python_has_missing_docstrings(source: str, force: bool = False) -> bool:
 
 
 def ts_has_missing_docstrings(source: str, force: bool = False) -> bool:
-    """Return True if source contains functions/classes that need JSDoc."""
+    """Return True if source contains functions/classes/methods that need JSDoc."""
     lines = source.splitlines()
     declaration_re = re.compile(
         r'^(?:export\s+)?(?:async\s+)?(?:function\s+\w+|class\s+\w+)'
+        r'|^(?:(?:public|private|protected|static|async|override)\s+)*\w+\s*\('
     )
     for i, line in enumerate(lines):
-        if declaration_re.match(line.strip()):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        if declaration_re.match(stripped):
             prev_non_empty = next(
                 (lines[j].strip() for j in range(i - 1, -1, -1) if lines[j].strip()),
                 ""
@@ -114,7 +118,7 @@ def ts_has_missing_docstrings(source: str, force: bool = False) -> bool:
 
 def get_format(file: Path, fmt: Optional[str]) -> str:
     """Return docstring format: explicit override or auto-detected from extension."""
-    if fmt:
+    if fmt is not None:
         return fmt
     return "mkdocs" if file.suffix == ".py" else "tsdoc"
 
