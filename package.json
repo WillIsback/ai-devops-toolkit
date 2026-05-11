@@ -1,0 +1,6 @@
+{
+  "name": "ai-devops-toolkit",
+  "scripts": {
+    "docgen": "uv run docgen"
+  }
+}
