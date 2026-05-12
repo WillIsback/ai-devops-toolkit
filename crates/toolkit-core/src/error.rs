@@ -15,4 +15,8 @@ pub enum CoreError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Request failed: {reason}")]
+    #[diagnostic(help("Check the vLLM server logs for details"))]
+    RequestFailed { reason: String },
 }

@@ -5,6 +5,7 @@ pub struct Config {
     pub vllm_base_url: String,
     pub batch_size:    usize,
     pub connect_timeout_secs: u64,
+    pub vllm_timeout_secs: u64,
 }
 
 impl Config {
@@ -17,6 +18,10 @@ impl Config {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(4),
             connect_timeout_secs: 5,
+            vllm_timeout_secs: env::var("VLLM_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(120),
         }
     }
 

@@ -1,13 +1,5 @@
 use toolkit_core::config::Config;
-use async_openai::{
-    Client,
-    config::OpenAIConfig,
-    types::{
-        ChatCompletionRequestSystemMessageArgs,
-        ChatCompletionRequestUserMessageArgs,
-        CreateChatCompletionRequestArgs,
-    },
-};
+use toolkit_core::vllm::{self, ChatMessage};
 
 /// Split a diff string into chunks capped at `max_words` words per chunk.
 pub fn split_diff_into_chunks(diff: &str, max_words: usize) -> Vec<String> {
@@ -41,58 +33,27 @@ pub async fn review_diff(diff: &str, model: &str, cfg: &Config) -> Option<String
         return None;
     }
 
-    let client = Client::with_config(
-        OpenAIConfig::new()
-            .with_api_base(&cfg.vllm_base_url)
-            .with_api_key("none"),
-    );
-
     let chunks = split_diff_into_chunks(diff, 2000);
     let mut reviews = vec![];
 
     for (i, chunk) in chunks.iter().enumerate() {
         println!("Reviewing chunk {}/{}...", i + 1, chunks.len());
-        let req = match CreateChatCompletionRequestArgs::default()
-            .model(model)
-            .messages([
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content("You are a code reviewer. Be brief, practical, and output final answer only.")
-                    .build()
-                    .ok()?
-                    .into(),
-                ChatCompletionRequestUserMessageArgs::default()
-                    .content(format!(
-                        "Review this code diff. Return only Markdown sections: Issues, Improvements, Positives.\n\n```diff\n{chunk}\n```"
-                    ))
-                    .build()
-                    .ok()?
-                    .into(),
-            ])
-            .max_tokens(350u32)
-            .temperature(0.1_f32)
-            .build()
-        {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Warning: Failed to build request for chunk {}: {e}", i + 1);
-                continue;
-            }
-        };
+        let messages = vec![
+            ChatMessage {
+                role: "system",
+                content: "You are a code reviewer. Be brief, practical, and output final answer only.".to_string(),
+            },
+            ChatMessage {
+                role: "user",
+                content: format!(
+                    "Review this code diff. Return only Markdown sections: Issues, Improvements, Positives.\n\n```diff\n{chunk}\n```"
+                ),
+            },
+        ];
 
-        match client.chat().create(req).await {
-            Ok(resp) => {
-                if let Some(text) = resp
-                    .choices
-                    .into_iter()
-                    .next()
-                    .and_then(|c| c.message.content)
-                    .filter(|t| !t.trim().is_empty())
-                {
-                    reviews.push(text);
-                } else {
-                    eprintln!("Warning: Chunk {}: empty response from model", i + 1);
-                    reviews.push(format!("Chunk {}: empty model response", i + 1));
-                }
+        match vllm::chat_complete(&messages, model, 1024, 0.1, cfg).await {
+            Ok(text) => {
+                reviews.push(text);
             }
             Err(e) => {
                 eprintln!("Warning: Chunk {} error: {e}", i + 1);
