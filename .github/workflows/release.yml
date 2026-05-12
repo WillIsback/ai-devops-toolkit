@@ -28,6 +28,8 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build code-review-cli
+        env:
+          OPENSSL_VENDORED: "1"
         run: cross build --release --bin code-review-cli --target ${{ matrix.target }}
 
       - name: Rename binary
