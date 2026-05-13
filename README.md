@@ -25,13 +25,39 @@ Reviews a Pull Request diff and posts a structured Markdown comment on the PR. D
 
 ### `docgen` — CLI
 
-Generates and inserts mkdocs/tsdoc docstrings into Python and TypeScript files using tree-sitter AST parsing. Runs locally via `uv` or `pnpm`, with parallel batch processing and a safe git branch workflow.
+Generates and inserts mkdocs/tsdoc docstrings into TypeScript and Python files using tree-sitter AST parsing. Distributed as a pre-compiled Rust binary — no Python runtime required.
+
+**Install via pnpm/npm:**
 
 ```bash
-uv run docgen src/ --recursive
-uv run docgen path/to/file.py --force
-pnpm run docgen -- src/
+pnpm add -D WillIsback/ai-devops-toolkit
+# or
+npm install --save-dev WillIsback/ai-devops-toolkit
 ```
+
+The postinstall script downloads the correct binary for your platform from GitHub Releases into `node_modules/.bin/docgen`.
+
+**Usage:**
+
+```bash
+# Run via pnpm exec (after install as a dependency)
+pnpm exec docgen src/
+pnpm exec docgen src/ --recursive
+pnpm exec docgen path/to/file.ts --force
+pnpm exec docgen path/to/file.ts --format tsdoc
+
+# Or add to your package.json scripts:
+# "docgen": "docgen"
+# then: pnpm run docgen -- src/
+```
+
+**Options:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--recursive` | `-r` | Recurse into subdirectories |
+| `--force` | | Regenerate existing docstrings |
+| `--format` | | Force docstring format: `mkdocs` or `tsdoc` (auto-detected if omitted) |
 
 → [Full documentation](docs/docgen.md)
 
@@ -48,9 +74,6 @@ Both tools share the same vLLM backend:
 ## Setup
 
 ```bash
-# Install the docgen binary via uv (maturin builds the Rust binary)
-uv sync
-
 # Copy and configure environment
 cp .env.example .env
 # Set VLLM_BASE_URL in .env
