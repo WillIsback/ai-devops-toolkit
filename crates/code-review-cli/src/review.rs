@@ -220,8 +220,10 @@ mod tests {
 
     #[test]
     fn review_diff_calls_summarize_signature() {
-        // Verify summarize_review exists with the right parameter types at compile time.
-        // Taking its address and casting to a unit type is enough to prove the shape.
-        let _ = std::mem::size_of_val(&summarize_review);
+        // Verify the function signature via a helper that constrains parameter types.
+        // This will fail to compile if the parameter types change.
+        async fn _type_check(chunks: &[String], model: &str, cfg: &Config) {
+            let _ = summarize_review(chunks, model, cfg).await;
+        }
     }
 }
