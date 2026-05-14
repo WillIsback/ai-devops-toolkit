@@ -34,12 +34,61 @@ pub fn split_diff_into_chunks(diff: &str, max_words: usize) -> Vec<String> {
     chunks
 }
 
-/// Send each diff chunk to vLLM and return concatenated Markdown review.
+const SINGLE_ROUND_SYSTEM_PROMPT: &str =
+    "You are a senior code reviewer. Be concise and practical.";
+
+const SINGLE_ROUND_USER_TEMPLATE: &str = concat!(
+    "Review this diff and produce exactly two sections:\n",
+    "## Code Quality Issues\n",
+    "A markdown table with columns: #, Location, Issue, Severity. ",
+    "Severity values: Critical, High, Medium, Low. Sort Critical first.\n\n",
+    "## Security Issues\n",
+    "A markdown table with columns: #, Location, Issue, Risk Level. ",
+    "Risk Level values: Critical, High, Medium, Low. Sort Critical first.\n\n",
+    "If a section has no findings write 'No issues found.' under the heading. ",
+    "Output only the two sections. No preamble, no conclusion.\n\n```diff\n"
+);
+
+/// Review a diff using the appropriate strategy:
+/// - 1 file  → single round (one direct `chat_complete` call)
+/// - N files → two rounds (per-chunk bullets + reasoning summarization)
 pub async fn review_diff(diff: &str, model: &str, cfg: &Config) -> Option<String> {
     if diff.trim().is_empty() {
         return None;
     }
 
+    let file_count = diff.matches("\n\n# File:").count();
+    println!("Files in diff: {file_count} — using {} strategy",
+        if file_count <= 1 { "single-round" } else { "two-round" });
+
+    if file_count <= 1 {
+        single_round_review(diff, model, cfg).await
+    } else {
+        multi_round_review(diff, model, cfg).await
+    }
+}
+
+async fn single_round_review(diff: &str, model: &str, cfg: &Config) -> Option<String> {
+    let messages = vec![
+        ChatMessage {
+            role: "system",
+            content: SINGLE_ROUND_SYSTEM_PROMPT.to_string(),
+        },
+        ChatMessage {
+            role: "user",
+            content: format!("{SINGLE_ROUND_USER_TEMPLATE}{diff}\n```"),
+        },
+    ];
+    match vllm::chat_complete(&messages, model, 2048, 0.1, cfg).await {
+        Ok(text) => Some(text),
+        Err(e) => {
+            eprintln!("Warning: single-round review failed: {e}");
+            None
+        }
+    }
+}
+
+async fn multi_round_review(diff: &str, model: &str, cfg: &Config) -> Option<String> {
     let chunks = split_diff_into_chunks(diff, 2000);
     let mut reviews = vec![];
 
@@ -55,11 +104,8 @@ pub async fn review_diff(diff: &str, model: &str, cfg: &Config) -> Option<String
                 content: chunk_user_prompt(chunk),
             },
         ];
-
         match vllm::chat_complete(&messages, model, 1024, 0.1, cfg).await {
-            Ok(text) => {
-                reviews.push(text);
-            }
+            Ok(text) => reviews.push(text),
             Err(e) => {
                 eprintln!("Warning: Chunk {} error: {e}", i + 1);
                 reviews.push(format!("Chunk {}: error during analysis", i + 1));
@@ -71,7 +117,6 @@ pub async fn review_diff(diff: &str, model: &str, cfg: &Config) -> Option<String
         return None;
     }
 
-    // Reasoning summarization pass — falls back to raw concat on failure.
     let valid_reviews: Vec<String> = reviews
         .iter()
         .filter(|r| !r.starts_with("Chunk ") || !r.contains(": error during analysis"))
@@ -225,11 +270,23 @@ mod tests {
     }
 
     #[test]
-    fn review_diff_calls_summarize_signature() {
-        // Verify the function signature via a helper that constrains parameter types.
-        // This will fail to compile if the parameter types change.
-        async fn _type_check(chunks: &[String], model: &str, cfg: &Config) {
-            let _ = summarize_review(chunks, model, cfg).await;
-        }
+    fn single_round_prompt_contains_both_sections() {
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("## Code Quality Issues"));
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("## Security Issues"));
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Severity"));
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Risk Level"));
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Sort Critical first"));
+    }
+
+    #[test]
+    fn multi_file_diff_detected() {
+        let diff = "\n\n# File: a.rs\n+ foo\n\n# File: b.rs\n+ bar\n";
+        assert_eq!(diff.matches("\n\n# File:").count(), 2);
+    }
+
+    #[test]
+    fn single_file_diff_detected() {
+        let diff = "\n\n# File: a.rs\n+ foo\n";
+        assert_eq!(diff.matches("\n\n# File:").count(), 1);
     }
 }
