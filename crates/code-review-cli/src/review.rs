@@ -4,7 +4,10 @@ use toolkit_core::vllm::{self, ChatMessage};
 /// Construct the user prompt for a diff chunk review.
 fn chunk_user_prompt(chunk: &str) -> String {
     format!(
-        "Review this diff chunk. List only:\n- CODE: <file>:<line> - <issue>\n- SEC: <file>:<line> - <issue>\nNo headings, no prose, bullets only.\n\n```diff\n{chunk}\n```"
+        "Review this diff chunk. List findings only as bullets:\n\
+         - CODE: `file:line` — <issue> [Critical|High|Medium|Low]\n\
+         - SEC: `file:line` — <issue> [Critical|High|Medium|Low]\n\
+         No headings, no prose, bullets only.\n\n```diff\n{chunk}\n```"
     )
 }
 
@@ -35,18 +38,37 @@ pub fn split_diff_into_chunks(diff: &str, max_words: usize) -> Vec<String> {
 }
 
 const SINGLE_ROUND_SYSTEM_PROMPT: &str =
-    "You are a senior code reviewer. Be concise and practical.";
+    "You are a senior software engineer performing a pull request code review. \
+     Be precise, actionable, and output only the requested format. No preamble, no conclusion.";
 
 const SINGLE_ROUND_USER_TEMPLATE: &str = concat!(
-    "Review this diff and produce exactly two sections:\n",
-    "## Code Quality Issues\n",
-    "A markdown table with columns: #, Location, Issue, Severity. ",
-    "Severity values: Critical, High, Medium, Low. Sort Critical first.\n\n",
-    "## Security Issues\n",
-    "A markdown table with columns: #, Location, Issue, Risk Level. ",
-    "Risk Level values: Critical, High, Medium, Low. Sort Critical first.\n\n",
-    "If a section has no findings write 'No issues found.' under the heading. ",
-    "Output only the two sections. No preamble, no conclusion.\n\n```diff\n"
+    "Review this diff and output exactly this structure:\n\n",
+    "---\n",
+    "findings:\n",
+    "  critical: <count>\n",
+    "  high: <count>\n",
+    "  medium: <count>\n",
+    "  low: <count>\n",
+    "top_files:\n",
+    "  - <up to 3 files with most findings>\n",
+    "risk_score: <critical|high|medium|low|none>\n",
+    "---\n\n",
+    "## 🔍 AI Code Review\n\n",
+    "### 🛠 Code Quality Issues\n\n",
+    "| # | Location | Issue | Severity |\n",
+    "|---|----------|-------|----------|\n",
+    "| 1 | `file:line` | Description | 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low |\n\n",
+    "### 🔒 Security Issues\n\n",
+    "| # | Location | Issue | Risk Level |\n",
+    "|---|----------|-------|------------|\n",
+    "| 1 | `file:line` | Description | 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low |\n\n",
+    "Rules:\n",
+    "- Sort rows: Critical first, then High, Medium, Low\n",
+    "- If a section has no findings, write: | — | — | No issues found. | — |\n",
+    "- Location always in backticks\n",
+    "- top_files: files with most findings, max 3\n",
+    "- risk_score: highest severity present; none if no findings\n\n",
+    "Diff to review:\n```diff\n"
 );
 
 /// Review a diff using the appropriate strategy:
@@ -97,7 +119,7 @@ async fn multi_round_review(diff: &str, model: &str, cfg: &Config) -> Option<Str
         let messages = vec![
             ChatMessage {
                 role: "system",
-                content: "You are a code reviewer. Be brief, practical, and output final answer only.".to_string(),
+                content: SINGLE_ROUND_SYSTEM_PROMPT.to_string(),
             },
             ChatMessage {
                 role: "user",
@@ -135,22 +157,39 @@ async fn multi_round_review(diff: &str, model: &str, cfg: &Config) -> Option<Str
     }
 }
 
-const SUMMARIZE_SYSTEM_PROMPT: &str = concat!(
-    "You are a senior code reviewer. Given a list of raw review bullets ",
-    "collected from multiple diff chunks, produce a single concise review with exactly ",
-    "two sections:\n",
-    "## Code Quality Issues\n",
-    "A markdown table with columns: #, Location, Issue, Severity. ",
-    "Severity values: Critical, High, Medium, Low. ",
-    "Sort rows Critical first, then High, Medium, Low. ",
-    "Deduplicate similar findings.\n\n",
-    "## Security Issues\n",
-    "A markdown table with columns: #, Location, Issue, Risk Level. ",
-    "Risk Level values: Critical, High, Medium, Low. ",
-    "Sort rows Critical first, then High, Medium, Low. ",
-    "Deduplicate similar findings.\n\n",
-    "If a section has no findings, write 'No issues found.' under the heading. ",
-    "Output only the two sections. No preamble, no conclusion."
+const SUMMARIZE_SYSTEM_PROMPT: &str =
+    "You are a senior software engineer performing a pull request code review. \
+     Be precise, actionable, and output only the requested format. No preamble, no conclusion.";
+
+const SUMMARIZE_USER_TEMPLATE: &str = concat!(
+    "Review these findings and output exactly this structure:\n\n",
+    "---\n",
+    "findings:\n",
+    "  critical: <count>\n",
+    "  high: <count>\n",
+    "  medium: <count>\n",
+    "  low: <count>\n",
+    "top_files:\n",
+    "  - <up to 3 files with most findings>\n",
+    "risk_score: <critical|high|medium|low|none>\n",
+    "---\n\n",
+    "## 🔍 AI Code Review\n\n",
+    "### 🛠 Code Quality Issues\n\n",
+    "| # | Location | Issue | Severity |\n",
+    "|---|----------|-------|----------|\n",
+    "| 1 | `file:line` | Description | 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low |\n\n",
+    "### 🔒 Security Issues\n\n",
+    "| # | Location | Issue | Risk Level |\n",
+    "|---|----------|-------|------------|\n",
+    "| 1 | `file:line` | Description | 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low |\n\n",
+    "Rules:\n",
+    "- Sort rows: Critical first, then High, Medium, Low\n",
+    "- Deduplicate similar findings across chunks\n",
+    "- If a section has no findings, write: | — | — | No issues found. | — |\n",
+    "- Location always in backticks\n",
+    "- top_files: files with most findings, max 3\n",
+    "- risk_score: highest severity present; none if no findings\n\n",
+    "Findings collected from all diff chunks:\n\n"
 );
 
 /// Feed all chunk bullet outputs into an LLM call and return the
@@ -171,7 +210,7 @@ pub async fn summarize_review(
         },
         ChatMessage {
             role: "user",
-            content: format!("Here are the raw review bullets:\n\n{combined}"),
+            content: format!("{SUMMARIZE_USER_TEMPLATE}{combined}"),
         },
     ];
     match vllm::chat_complete(&messages, model, 2048, 0.2, cfg).await {
@@ -191,11 +230,7 @@ pub async fn post_pr_comment(
     token: &str,
 ) -> bool {
     const MAX_LEN: usize = 60_000;
-    let source_label = std::env::var("REVIEW_ENGINE_LABEL")
-        .unwrap_or_else(|_| "self-hosted AI reviewer".to_string());
-    let mut body = format!(
-        "## AI Code Review\n\n{review}\n\n---\n*This review was generated by {source_label}.*"
-    );
+    let mut body = review.to_string();
     if body.len() > MAX_LEN {
         // Find the last valid UTF-8 char boundary at or before MAX_LEN - 50
         let cutoff = MAX_LEN - 50;
@@ -229,12 +264,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn summarize_prompt_contains_both_sections() {
-        assert!(SUMMARIZE_SYSTEM_PROMPT.contains("## Code Quality Issues"));
-        assert!(SUMMARIZE_SYSTEM_PROMPT.contains("## Security Issues"));
-        assert!(SUMMARIZE_SYSTEM_PROMPT.contains("Severity"));
-        assert!(SUMMARIZE_SYSTEM_PROMPT.contains("Risk Level"));
-        assert!(SUMMARIZE_SYSTEM_PROMPT.contains("Sort rows Critical first"));
+    fn summarize_system_prompt_is_role_focused() {
+        assert!(SUMMARIZE_SYSTEM_PROMPT.contains("senior software engineer"),
+            "system prompt must establish engineer role");
+        assert!(SUMMARIZE_SYSTEM_PROMPT.contains("pull request code review"),
+            "system prompt must state the task");
+        assert!(!SUMMARIZE_SYSTEM_PROMPT.contains("## Code Quality Issues"),
+            "format instructions must be in the user message, not system prompt");
     }
 
     #[test]
@@ -271,11 +307,11 @@ mod tests {
 
     #[test]
     fn single_round_prompt_contains_both_sections() {
-        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("## Code Quality Issues"));
-        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("## Security Issues"));
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Code Quality Issues"));
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Security Issues"));
         assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Severity"));
         assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Risk Level"));
-        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Sort Critical first"));
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("Sort rows: Critical first"));
     }
 
     #[test]
@@ -288,5 +324,77 @@ mod tests {
     fn single_file_diff_detected() {
         let diff = "\n\n# File: a.rs\n+ foo\n";
         assert_eq!(diff.matches("\n\n# File:").count(), 1);
+    }
+
+    #[test]
+    fn single_round_template_contains_yaml_frontmatter() {
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("findings:"),
+            "template must include YAML findings key");
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("risk_score:"),
+            "template must include YAML risk_score key");
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("top_files:"),
+            "template must include YAML top_files key");
+    }
+
+    #[test]
+    fn single_round_template_contains_emoji_severity_badges() {
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("🔴 Critical"),
+            "template must include red circle for Critical");
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("🟠 High"),
+            "template must include orange circle for High");
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("🟡 Medium"),
+            "template must include yellow circle for Medium");
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("🟢 Low"),
+            "template must include green circle for Low");
+    }
+
+    #[test]
+    fn single_round_template_contains_pipe_table_syntax() {
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("| # | Location |"),
+            "template must include pipe-syntax table header");
+        assert!(SINGLE_ROUND_USER_TEMPLATE.contains("|---|"),
+            "template must include pipe-syntax table separator");
+    }
+
+    #[test]
+    fn system_prompts_are_role_focused_not_format_heavy() {
+        for prompt in &[SINGLE_ROUND_SYSTEM_PROMPT, SUMMARIZE_SYSTEM_PROMPT] {
+            assert!(prompt.contains("senior software engineer"),
+                "system prompt must establish senior engineer role");
+            assert!(prompt.contains("pull request code review"),
+                "system prompt must state the task");
+            assert!(!prompt.contains("markdown table"),
+                "format instructions belong in user prompts, not system prompts");
+        }
+    }
+
+    #[test]
+    fn summarize_template_contains_yaml_frontmatter() {
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("findings:"),
+            "summarize template must include YAML findings key");
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("risk_score:"),
+            "summarize template must include YAML risk_score key");
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("top_files:"),
+            "summarize template must include YAML top_files key");
+    }
+
+    #[test]
+    fn summarize_template_contains_emoji_severity_badges() {
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("🔴 Critical"),
+            "summarize template must include red circle for Critical");
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("🟠 High"),
+            "summarize template must include orange circle for High");
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("🟡 Medium"),
+            "summarize template must include yellow circle for Medium");
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("🟢 Low"),
+            "summarize template must include green circle for Low");
+    }
+
+    #[test]
+    fn summarize_template_has_deduplication_rule() {
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("Deduplicate similar findings across chunks"),
+            "summarize template must instruct LLM to deduplicate");
+        assert!(SUMMARIZE_USER_TEMPLATE.contains("Findings collected from all diff chunks:"),
+            "summarize template must end with the findings section header");
     }
 }
