@@ -35,8 +35,12 @@ runs:
           aarch64) ASSET="code-review-cli-linux-arm64" ;;
           *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
-        curl -fsSL -o "${{ github.action_path }}/code-review-cli" \
-          "https://github.com/WillIsback/code-review/releases/latest/download/${ASSET}"
+        BASE_URL="https://github.com/WillIsback/code-review/releases/latest/download"
+        curl -fsSL -o "${{ github.action_path }}/code-review-cli" "${BASE_URL}/${ASSET}"
+        curl -fsSL -o "${{ github.action_path }}/code-review-cli.sha256" "${BASE_URL}/${ASSET}.sha256"
+        # Rewrite the checksum file path to match the local filename before verifying
+        sed -i "s|${ASSET}|code-review-cli|" "${{ github.action_path }}/code-review-cli.sha256"
+        sha256sum --check "${{ github.action_path }}/code-review-cli.sha256"
         chmod +x "${{ github.action_path }}/code-review-cli"
 
     - name: Run AI Code Review
