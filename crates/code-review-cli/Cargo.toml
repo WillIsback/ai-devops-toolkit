@@ -12,5 +12,5 @@ toolkit-core = { path = "../toolkit-core" }
 tokio        = { workspace = true }
 reqwest      = { workspace = true }
 serde_json   = { workspace = true }
-octocrab     = "0.41"
+octocrab     = "0.50"
 dotenvy      = { workspace = true }
