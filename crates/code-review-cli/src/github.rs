@@ -21,10 +21,33 @@ impl GithubConfig {
     }
 }
 
+/// Returns true for files that should be excluded from code review:
+/// lock files (Cargo.lock, *.lock, *-lock.json, lock.yaml/yml),
+/// dotfiles/dot-directories (e.g. `.gitignore`, `.github/`), and
+/// documentation files (`.md`, `.mdx`).
+fn should_skip_file(filename: &str) -> bool {
+    // Lock files
+    if filename == "Cargo.lock"
+        || filename.ends_with(".lock")
+        || filename.ends_with("-lock.json")
+        || filename.ends_with("lock.yaml")
+        || filename.ends_with("lock.yml")
+    {
+        return true;
+    }
+    // Markdown / documentation
+    if filename.ends_with(".md") || filename.ends_with(".mdx") {
+        return true;
+    }
+    // Dotfiles and dot-directories (e.g. .gitignore, .github/workflows/ci.yml)
+    filename.split('/').any(|part| part.starts_with('.'))
+}
+
 /// Fetches the unified diff for a PR as a single string.
 ///
 /// Uses `octocrab::Octocrab::all_pages` to transparently follow Link-header
 /// pagination so every changed file is included regardless of PR size.
+/// Lock files, dotfiles/dot-directories, and documentation files are excluded.
 pub async fn fetch_pr_diff(cfg: &GithubConfig) -> Result<String, String> {
     let octocrab = octocrab::Octocrab::builder()
         .personal_token(cfg.token.clone())
@@ -51,14 +74,8 @@ pub async fn fetch_pr_diff(cfg: &GithubConfig) -> Result<String, String> {
 
     let mut diff = String::new();
     for entry in &entries {
-        // Skip auto-generated lock files — they produce noise and no actionable findings.
-        let name = entry.filename.as_str();
-        if name == "Cargo.lock"
-            || name.ends_with(".lock")
-            || name.ends_with("-lock.json")
-            || name.ends_with("lock.yaml")
-            || name.ends_with("lock.yml")
-        {
+        if should_skip_file(&entry.filename) {
+            println!("Skipping: {}", entry.filename);
             continue;
         }
         if let Some(patch) = &entry.patch {
@@ -73,6 +90,24 @@ pub async fn fetch_pr_diff(cfg: &GithubConfig) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skip_file_filters_lock_dotfiles_and_markdown() {
+        // Lock files
+        assert!(should_skip_file("Cargo.lock"));
+        assert!(should_skip_file("package-lock.json"));
+        assert!(should_skip_file("yarn.lock"));
+        // Dotfiles and dot-directories
+        assert!(should_skip_file(".gitignore"));
+        assert!(should_skip_file(".github/workflows/ci.yml"));
+        // Markdown
+        assert!(should_skip_file("README.md"));
+        assert!(should_skip_file("docs/guide.mdx"));
+        // Source files should pass through
+        assert!(!should_skip_file("src/main.rs"));
+        assert!(!should_skip_file("frontend/src/components/ui/button.tsx"));
+        assert!(!should_skip_file("Cargo.toml"));
+    }
 
     #[test]
     fn env_config_reads_vars() {

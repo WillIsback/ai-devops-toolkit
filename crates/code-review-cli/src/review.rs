@@ -153,7 +153,7 @@ const SUMMARIZE_SYSTEM_PROMPT: &str = concat!(
     "Output only the two sections. No preamble, no conclusion."
 );
 
-/// Feed all chunk bullet outputs into a reasoning LLM call and return the
+/// Feed all chunk bullet outputs into an LLM call and return the
 /// structured two-section Markdown summary.
 pub async fn summarize_review(
     chunk_reviews: &[String],
@@ -174,7 +174,7 @@ pub async fn summarize_review(
             content: format!("Here are the raw review bullets:\n\n{combined}"),
         },
     ];
-    match vllm::chat_complete_with_reasoning(&messages, model, 8192, 0.7, cfg).await {
+    match vllm::chat_complete(&messages, model, 2048, 0.2, cfg).await {
         Ok(text) => Some(text),
         Err(e) => {
             eprintln!("Warning: summarization failed: {e}");
