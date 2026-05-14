@@ -12,7 +12,13 @@ async fn main() {
     println!("{}", "=".repeat(60));
 
     let cfg = Config::from_env();
-    let gh = github::GithubConfig::from_env();
+    let gh = match github::GithubConfig::from_env() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("GitHub configuration error: {e}");
+            std::process::exit(1);
+        }
+    };
 
     // Detect model
     let model = match vllm::resolve_model(&cfg).await {

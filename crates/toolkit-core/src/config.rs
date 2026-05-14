@@ -36,8 +36,10 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn defaults_when_env_absent() {
         unsafe {
             std::env::remove_var("VLLM_BASE_URL");
@@ -49,6 +51,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn reads_env_vars() {
         unsafe {
             std::env::set_var("VLLM_BASE_URL", "http://custom:9000/v1");
