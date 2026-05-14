@@ -51,6 +51,16 @@ pub async fn fetch_pr_diff(cfg: &GithubConfig) -> Result<String, String> {
 
     let mut diff = String::new();
     for entry in &entries {
+        // Skip auto-generated lock files — they produce noise and no actionable findings.
+        let name = entry.filename.as_str();
+        if name == "Cargo.lock"
+            || name.ends_with(".lock")
+            || name.ends_with("-lock.json")
+            || name.ends_with("lock.yaml")
+            || name.ends_with("lock.yml")
+        {
+            continue;
+        }
         if let Some(patch) = &entry.patch {
             diff.push_str(&format!("\n\n# File: {}\n", entry.filename));
             diff.push_str(patch);

@@ -129,7 +129,7 @@ pub async fn summarize_review(
             content: format!("Here are the raw review bullets:\n\n{combined}"),
         },
     ];
-    match vllm::chat_complete_with_reasoning(&messages, model, 2048, 0.2, cfg).await {
+    match vllm::chat_complete_with_reasoning(&messages, model, 8192, 1.0, cfg).await {
         Ok(text) => Some(text),
         Err(e) => {
             eprintln!("Warning: summarization failed: {e}");
