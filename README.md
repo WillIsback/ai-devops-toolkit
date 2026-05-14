@@ -1,82 +1,57 @@
-# ai-devops-toolkit
+# code-review
 
-A collection of AI-powered DevOps tools for WillIsback projects, backed by a self-hosted [vLLM](https://github.com/vllm-project/vllm) instance.
+GitHub Composite Action that reviews a Pull Request diff using a self-hosted [vLLM](https://github.com/vllm-project/vllm) instance and posts a structured Markdown comment on the PR.
 
-The tools are written in **Rust** (Cargo Workspace) and distributed as native binaries — fast startup, no Python runtime required at run time.
+The action downloads a pre-compiled **Rust binary** from GitHub Releases and executes it directly — no `setup-python`, no `pip install`, startup time is ~1 second plus inference.
 
 ---
 
-## Tools
-
-### `code-review` — GitHub Action
-
-Reviews a Pull Request diff and posts a structured Markdown comment on the PR. Downloads a pre-compiled Rust binary from GitHub Releases — no `setup-python` or `pip install` step.
+## Usage
 
 ```yaml
-- uses: WillIsback/ai-devops-toolkit/code-review@main
+- name: Checkout code
+  uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+
+- name: AI Code Review
+  uses: WillIsback/code-review@main
   with:
     vllm-url: ${{ secrets.VLLM_URL }}
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+## Inputs
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `vllm-url` | yes | — | Base URL of the vLLM server (e.g. `http://<host>:30000/v1`) |
+| `github-token` | yes | — | GitHub token for fetching the PR diff and posting the review comment |
+| `vllm-model` | no | `""` | Override model ID — auto-detected from `/v1/models` if empty |
+| `vllm-timeout` | no | `120` | Total request timeout in seconds |
+| `vllm-retries` | no | `2` | Number of retries on LLM request failure |
+
+## Prerequisites
+
+- A self-hosted GitHub Actions runner with network access to your vLLM instance
+- A repository or organisation secret `VLLM_URL` set to your vLLM endpoint
+- Runner architecture must be `x86_64` or `aarch64` (Linux)
+
+## How it works
+
+1. **Download binary** — the action fetches `code-review-linux-amd64` (or `arm64`) from GitHub Releases and makes it executable
+2. **Fetch PR diff** — fetches all changed files via the GitHub REST API, with automatic pagination
+3. **Model detection** — uses `VLLM_MODEL` input if set; otherwise queries `GET /v1/models` to auto-detect the loaded model
+4. **Chunked review** — splits large diffs into ~2000-word chunks and sends each to the vLLM chat completions endpoint
+5. **Post comment** — aggregates chunk reviews into a single Markdown comment and posts it on the PR
+
 → [Full documentation](docs/code-review.md)
 
 ---
 
-### `docgen` — CLI
-
-Generates and inserts mkdocs/tsdoc docstrings into TypeScript and Python files using tree-sitter AST parsing. Distributed as a pre-compiled Rust binary — no Python runtime required.
-
-**Install via pnpm/npm:**
-
-```bash
-pnpm add -D WillIsback/ai-devops-toolkit
-# or
-npm install --save-dev WillIsback/ai-devops-toolkit
-```
-
-The postinstall script downloads the correct binary for your platform from GitHub Releases into `node_modules/.bin/docgen`.
-
-**Usage:**
-
-```bash
-# Run via pnpm exec (after install as a dependency)
-pnpm exec docgen src/
-pnpm exec docgen src/ --recursive
-pnpm exec docgen path/to/file.ts --force
-pnpm exec docgen path/to/file.ts --format tsdoc
-
-# Or add to your package.json scripts:
-# "docgen": "docgen"
-# then: pnpm run docgen -- src/
-```
-
-**Options:**
-
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--recursive` | `-r` | Recurse into subdirectories |
-| `--force` | | Regenerate existing docstrings |
-| `--format` | | Force docstring format: `mkdocs` or `tsdoc` (auto-detected if omitted) |
-
-→ [Full documentation](docs/docgen.md)
-
----
-
-## Prerequisites
-
-Both tools share the same vLLM backend:
-
-- A running vLLM instance accessible from your machine or CI runner
-- Model is auto-detected via `GET /v1/models` — no manual configuration needed
-- Set `VLLM_MODEL` env var to skip auto-detection and use a specific model ID
-
 ## Setup
 
 ```bash
-# Copy and configure environment
 cp .env.example .env
 # Set VLLM_BASE_URL in .env
 ```
-
-`.env` files are loaded automatically — project `.env` overrides `~/.config/docgen/.env`.

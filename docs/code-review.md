@@ -15,7 +15,7 @@ The action downloads a pre-compiled **Rust binary** from GitHub Releases and exe
     fetch-depth: 0
 
 - name: AI Code Review
-  uses: WillIsback/ai-devops-toolkit/code-review@main
+  uses: WillIsback/code-review@main
   with:
     vllm-url: ${{ secrets.VLLM_URL }}
     github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -55,15 +55,15 @@ The action downloads a pre-compiled **Rust binary** from GitHub Releases and exe
 ## Project structure
 
 ```
+Cargo.toml                        # Single crate
 code-review/
 └── action.yml                    # Composite Action definition
-
-crates/
-├── toolkit-core/                 # Shared: vLLM client, config, errors
-└── code-review-cli/              # code-review-cli binary
-    ├── src/
-    │   ├── main.rs               # Orchestration
-    │   ├── github.rs             # PR diff fetch via octocrab
-    │   └── review.rs             # Chunking, vLLM calls, PR comment posting
-    └── Cargo.toml
+src/
+├── main.rs                       # Orchestration
+├── github.rs                     # PR diff fetch via octocrab
+├── review.rs                     # Chunking, vLLM calls, PR comment posting
+├── config.rs                     # .env loading
+├── llm.rs                        # vLLM client
+├── git.rs                        # Git helpers
+└── error.rs                      # Error types
 ```
