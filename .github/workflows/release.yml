@@ -17,30 +17,25 @@ jobs:
           fetch-depth: 0
 
       - name: Generate release notes
-        id: notes
         run: |
           PREV_TAG=$(git tag --sort=-v:refname | sed -n '2p')
           if [ -z "$PREV_TAG" ]; then
-            echo "body=Initial release" >> "$GITHUB_OUTPUT"
+            echo "Initial release" > release-notes.md
           else
-            NOTES=$(git log --pretty=format:"- %s" "${PREV_TAG}..HEAD" --no-merges)
-            # Use a delimiter for multiline output
             {
-              echo "body<<RELEASE_EOF"
               echo "## What's Changed"
               echo ""
-              echo "$NOTES"
+              git log --pretty=format:"- %s" "${PREV_TAG}..HEAD" --no-merges
               echo ""
               echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${{ github.ref_name }}"
-              echo "RELEASE_EOF"
-            } >> "$GITHUB_OUTPUT"
+            } > release-notes.md
           fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
           name: ${{ github.ref_name }}
-          body: ${{ steps.notes.outputs.body }}
+          body_path: release-notes.md  # avoids YAML special-char injection
           draft: false
           prerelease: false
         env:
@@ -53,6 +48,7 @@ jobs:
     permissions:
       contents: write
     strategy:
+      fail-fast: false  # publish successful targets even if one fails
       matrix:
         include:
           - platform: linux-amd64
@@ -66,8 +62,13 @@ jobs:
       - name: Install Rust stable with cross-compilation target
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          toolchain: "1.91.0"
+          toolchain: "1.91.1"
           targets: ${{ matrix.target }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - name: Install OpenSSL dev libraries (native build only)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
@@ -75,7 +76,8 @@ jobs:
 
       - name: Install cross (cross-compilation only)
         if: matrix.target != 'x86_64-unknown-linux-gnu'
-        run: cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.5
+        # Use crates.io release instead of git to avoid tag-rewrite supply chain risk
+        run: cargo install cross --version 0.2.5 --locked
 
       - name: Build binaries (native)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
@@ -108,10 +110,11 @@ jobs:
   release-macos:
     name: Build & Release macOS (${{ matrix.platform }})
     needs: create-release
-    runs-on: macos-latest
+    runs-on: macos-15  # pinned; macos-latest can jump major versions unexpectedly
     permissions:
       contents: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: macos-arm64
@@ -125,8 +128,13 @@ jobs:
       - name: Install Rust stable with target
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          toolchain: "1.91.0"
+          toolchain: "1.91.1"
           targets: ${{ matrix.target }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - name: Build binaries
         env:
@@ -137,11 +145,16 @@ jobs:
         run: |
           cp target/${{ matrix.target }}/release/code-review-cli code-review-cli-${{ matrix.platform }}
 
+      - name: Generate SHA-256 checksums
+        run: |
+          shasum -a 256 code-review-cli-${{ matrix.platform }} > code-review-cli-${{ matrix.platform }}.sha256
+
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
           files: |
             code-review-cli-${{ matrix.platform }}
+            code-review-cli-${{ matrix.platform }}.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -158,21 +171,25 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          toolchain: "1.91.0"
+          toolchain: "1.91.1"
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
 
       - name: Build binaries
-        env:
-          RUSTFLAGS: "-C link-arg=advapi32.lib"
+        # advapi32 is auto-linked by the Windows SDK; no RUSTFLAGS override needed
         run: cargo build --release --bin code-review-cli
 
-      - name: Rename binaries
+      - name: Rename binaries and generate checksums
         run: |
           cp target/release/code-review-cli.exe code-review-cli-windows-amd64.exe
+          certutil -hashfile code-review-cli-windows-amd64.exe SHA256 > code-review-cli-windows-amd64.exe.sha256
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
           files: |
             code-review-cli-windows-amd64.exe
+            code-review-cli-windows-amd64.exe.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
